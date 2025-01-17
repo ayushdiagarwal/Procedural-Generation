@@ -6,8 +6,14 @@ var pcanvas = document.querySelector("#perlin");
 pcanvas.width = window.innerWidth - 50;
 pcanvas.height = 250;
 
+var p2dcanvas = document.querySelector("#perlinoise");
+p2dcanvas.width = 400;
+p2dcanvas.height = 400;
+
 var pctx = pcanvas.getContext('2d');
 var rctx = rcanvas.getContext('2d');
+var p2dctx = p2dcanvas.getContext('2d');
+
 
 class PsuedoRandom {
     constructor(seed) {
@@ -47,7 +53,7 @@ class PerlinNoise {
 
     // This function is used to ease/smooth, I think we can also use cosine interpolation instead of this one
     fade(t) {
-        return t * t * t * (t * (t * 6 - 15) + 10); // Quintic interpolation
+        return t * t * t * (t * (t * 6 - 15) + 10); // Quintic 
     }
 
     noise(x) {
@@ -55,13 +61,147 @@ class PerlinNoise {
          const x1 = x0+1;
          const dx = x - x0;
          
-         const fx = this.fade(dx);
+         const fx = this.fade(dx); // ?
 
          const g0 = this.gradients[x0 % this.gradients.length] * dx;
          const g1 = this.gradients[x1 % this.gradients.length] * (dx - 1); // dx - 1 || 1 - d
 
         return lerp(g0, g1, fx);
 
+    }
+}
+
+class PerlinNoise2d {
+    constructor(size, seed) {
+        this.size = size;
+        this.seed = seed;
+
+        this.grid = Array(size).fill().map(() => Array(size).fill(0));
+    }
+
+    dotProductGradient(ix, iy, x, y) {
+        const dx = x - ix;
+        const dy = y - iy;
+        const gradient = this.gradient_vectors[ix][iy];
+        return dx * gradient[0] + dy * gradient[1];
+    }
+
+
+    generate() {
+
+        // define each border point with a random gradient vector
+        const directions = [[-1, -1], [-1,1], [1,-1], [1,1]];
+        this.gradient_vectors = [];
+        this.rng = new PsuedoRandom(this.seed);
+        
+        // Assigning random gradient vectors to each corner
+        for (let i=0; i<4; i++) {
+            this.gradient_vectors.push(directions[this.rng.randInt(0,3)]);
+        }
+
+        // this.gradient_vectors = Array(this.size + 1).fill()
+        // .map(() => Array(this.size + 1).fill()
+        //     .map(() => directions[Math.floor(Math.random() * directions.length)]));
+    
+
+        // Calculate dot product of each cell with all four gradient vector and their distance vector
+        for (let i=0; i<this.size; i++) {
+            this.d = []
+            for (let j=0; j<this.size; j++) {
+                // distance vector
+                const x = (i/this.size);
+                const y = (j/this.size);
+
+                // Find unit square containing the point
+                const x0 = Math.floor(x); // topleft
+                const x1 = x0 + 1; // top right
+                const y0 = Math.floor(y); // bottom left
+                const y1 = y0 + 1;  // bottom right
+
+                // Compute dot products at each corner of the square
+                const n00 = this.gradient_vectors[0][0]*x+this.gradient_vectors[0][0]*y;
+                const n01 = this.gradient_vectors[0][1]*x+this.gradient_vectors[0][1]*y;
+                const n10 = this.gradient_vectors[1][0]*x+this.gradient_vectors[1][0]*y;
+                const n11 = this.gradient_vectors[1][1]*x+this.gradient_vectors[1][1]*y;
+                
+                // const n00 = this.dotProductGradient(x0, y0, x, y);
+                // const n01 = this.dotProductGradient(x0, y1, x, y);
+                // const n10 = this.dotProductGradient(x1, y0, x, y);
+                // const n11 = this.dotProductGradient(x1, y1, x, y);
+
+
+                // Interpolate along x
+                const nx0 = this.interpolate(n00, n10, x - x0);
+                const nx1 = this.interpolate(n01, n11, x - x0);
+
+                // Interpolate along y
+                const value = this.interpolate(nx0, nx1, y - y0);
+                
+                
+                // Store the value in the grid
+                this.grid[i][j] = (value + 1) / 2;
+
+            }
+        }
+    }
+
+    // Fade function for smoothing transitions
+    fade(t) {
+        return t * t * t * (t * (t * 6 - 15) + 10);
+    }
+
+    // Interpolate between two values
+    interpolate(a, b, t) {
+        return a + this.fade(t) * (b - a);
+    }
+
+     // Dot product of a gradient vector with the distance vector
+    dotProductGradient(ix, iy, x, y) {
+        // Distance vector
+        const dx = x - ix;
+        const dy = y - iy;
+
+        // Gradient vector at (ix, iy)
+        const gradient = this.gradient_vectors[ix][iy];
+
+        return dx * gradient[0] + dy * gradient[1];
+    }
+
+    getGrid() {
+        return this.grid;
+    }
+}
+
+class generate2dPerlinNoise {
+    constructor(size, ctx) {
+        this.size = size;
+        this.ctx = ctx;
+        const cellSize = this.ctx.canvas.width/this.size;
+        this.perlin = new PerlinNoise2d(this.size, Date.now());
+        this.perlin.generate();
+        this.grid = this.perlin.getGrid();
+
+        // Generate a random color
+        const getColor = (t) => {
+            // const r = Math.round(255 - (1 - t) * 255);
+            // You can use this one to have more white/black
+            const r = Math.round(t*255) 
+            return `rgb(${r},${r},${r})`;
+        };
+        
+    
+        // Draw the grid
+        for (let row = 0; row < size; row++) {
+            for (let col = 0; col < size; col++) {
+            const x = col * cellSize;
+            const y = row * cellSize;
+
+            ctx.fillStyle = getColor(this.grid[row][col]); // Assign a random color to the cell
+            ctx.fillRect(x, y, cellSize, cellSize); // Draw the cell
+            // ctx.strokeStyle = "black";
+            // ctx.strokeRect(x, y, cellSize, cellSize); // Outline the cell
+            }
+        }
     }
 }
 
@@ -90,7 +230,6 @@ function cosineInterpolation(a,b,t) {
     return a + tRemapped * (b-a);
 }
 
-
 class RandPop {
     constructor(size, ctx) {
         this.dots = [];
@@ -107,7 +246,7 @@ class RandPop {
             this.ctx.beginPath();
             this.ctx.moveTo(posX, positionsY[i]);
             posX += 50;
-            this.ctx.bezierCurveTo(posX, positionsY[i+1]);
+            this.ctx.lineTo(posX, positionsY[i+1]);
             this.ctx.stroke();
 
             this.dots[i].drawDot();
@@ -132,7 +271,6 @@ class RandSmoothPopCosine {
 
             this.dots[i].drawDot();
         }
-
 
         // To make subdivsions
         this.size = size;
@@ -205,15 +343,17 @@ class PerlinNoiseVisualizer{
     }
 }
 
+
+
 function gameLoop() {
     // clear screen
     // rctx.clearRect(0,0, rcanvas.width, rcanvas.height)
     // draw population
     const popy = new RandSmoothPopCosine(30, rctx);
     const Ppop = new PerlinNoiseVisualizer(50, pctx);
+    const Perlin2d = new PerlinNoise2d(5, Date.now());
 
-
-    // requestAnimationFrame(gameLoop);
+    const veryNice = new generate2dPerlinNoise(5,p2dctx);
 
 }
 
